@@ -120,7 +120,7 @@
                 <p>Your guest can use any modern browser e.g. Chrome or FireFox or Edge or Safari</p>
             </div>
             <div class="modal-footer">
-                <button id="sad" type="button" class="btn btn-secondary" data-dismiss="modal" >Accept</button>
+                <button id="sader" type="button" class="btn btn-secondary" data-dismiss="modal" >Accept</button>
             </div>
         </div>
     </div>
@@ -137,16 +137,6 @@
 var properties = {
 websocketURL: "wss://pi.pe/websocket/?finger=" // where to find the redezvous server.
 };
-
-
-
-    var webRTCconfiguration = {
-        "iceServers": [
-            {urls: "stun:146.148.121.175:3478"},
-            {urls: "turn:146.148.121.175:3478?transport=udp", 'credential': 'nexus5x', 'username': 'smartphone'},
-        ],
-        "bundlePolicy":"max-bundle","iceCandidatePoolSize":1
-    };
 
 
 
@@ -189,7 +179,31 @@ websocketURL: "wss://pi.pe/websocket/?finger=" // where to find the redezvous se
         return (lines.join("\r\n"));
     }
 
-
+function loadProps() {
+    var that = {configUrl: "pipeconfig.json"};
+    var promise = new Promise(function (resolve, reject) {
+        var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+        xobj.open('GET', that.configUrl, true);
+        xobj.onreadystatechange = function () {
+            if (xobj.readyState == 4 && xobj.status == "200") {
+                var pipeconfig = JSON.parse(xobj.responseText);
+                console.log("Config is " + xobj.responseText);
+                if (pipeconfig.ice) {
+                    that.configuration = pipeconfig.ice;
+                    console.log("Set ICE params " + JSON.stringify(that.configuration));
+                }
+                if (pipeconfig.wsurl) {
+                    that.wsurl = pipeconfig.wsurl;
+                    console.log("Set wsurl " + JSON.stringify(that.wsurl));
+                }
+                resolve(that);
+            }
+        };
+        xobj.send(null);
+    });
+    return promise;
+}
     function messageDeal(event){
         //console.log("message is ", event.data);
         var data = JSON.parse(event.data);
@@ -413,7 +427,7 @@ websocketURL: "wss://pi.pe/websocket/?finger=" // where to find the redezvous se
 
     // configure local peerconnection and handlers
     function setupRTC(){
-        pc = new RTCPeerConnection(webRTCconfiguration, null);
+        pc = new RTCPeerConnection(properties.configuration, null);
         console.log("created peer connection");
 
         pc.onicecandidate = (e) => {
@@ -581,7 +595,7 @@ function accepted() {
                 height: 280,
                 correctLevel: QRCode.CorrectLevel.L
             });
-            socket = new WebSocket( properties.websocketURL + mid);
+            socket = new WebSocket( properties.wsurl + mid);
             socket.onmessage = messageDeal;
             socket.onopen = (_) => {
                 var url = document.location.href;
@@ -686,7 +700,12 @@ function isWebrtcSupported() {
                 console.log("I see webRTC !");
                 $("#status").text("Have webRTC available ");
                 $("#mute").click(_ => setMute(!mute));
-                setRole();
+                loadProps().then((props) => {
+                    properties = props;
+                    setRole();
+                })
+
+
             } else {
                 console.log("I don't see webRTC !");
                 $("#status").text("Dont have webRTC available ");
