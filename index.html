@@ -842,12 +842,6 @@ function loadProps() {
                     console.log("popping candidate off stash")
                     sendMessage(fid, mid, "candidate", can.candidate);
                 }
-                var act = $("#stopCall");
-                act.click( _ => $("#stopConfirm").modal('show') );
-                $("#confirmStop").click( _ => {
-                    $("#stopConfirm").modal('hide');
-                    stopCall();
-                });
             }
         };
     }
@@ -1073,6 +1067,11 @@ function isWebrtcSupported() {
                 $("#mute").click(_ => setMute(!mute));
                 $("#restartCall").click(_ => $("#restartConfirm").modal('show'));
                 $("#confirmRestart").click(_ => restartCall());
+                $("#stopCall").click(_ => $("#stopConfirm").modal('show'));
+                $("#confirmStop").click(_ => {
+                    $("#stopConfirm").modal('hide');
+                    stopCall();
+                });
                 loadProps().then((props) => {
                     properties = props;
                     setRole();
