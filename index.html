@@ -69,6 +69,7 @@
         <div id="chosenAction" class="row">
             <button id="mute" type="button" class="btn btn-primary btn-lg"><i id="muteIcon" class="fa fa-microphone fa-2x" aria-hidden="true"></i></button>
             <button id="stopCall" type="button" class="btn btn-primary btn-lg"><i id="stopIcon" class="fa fa-stop fa-2x" aria-hidden="true"></i></button>
+            <button id="restartCall" type="button" class="btn btn-warning btn-lg" style="display: none;"><i id="restartIcon" class="fa fa-refresh fa-2x" aria-hidden="true"></i> Restart</button>
         </div>
     <div>Duration <span class="badge badge-error" id="duration"></span></div>
     <div class="alert alert-danger" id="packetLoss">
@@ -93,6 +94,25 @@
             </div>
             <div class="modal-footer">
                 <button id="shareDone" type="button" class="btn btn-secondary" data-dismiss="modal" onclick="shared();">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="restartConfirm" class="modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Restart</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to clear the current recording and start over? This will delete any unsaved recordings.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmRestart">Yes, Clear and Restart</button>
             </div>
         </div>
     </div>
@@ -494,8 +514,17 @@ function loadProps() {
 
         $("#status").text("Call ended.");
 
+        // Show restart button
+        $("#restartCall").show();
+
         // Show checkpoints modal
         showCheckpointsModal();
+    }
+
+    function restartCall(){
+        // Clear the current recording and start over by reloading the page
+        $("#restartConfirm").modal('hide');
+        document.location = document.location;
     }
 
     function showCheckpointsModal() {
@@ -1037,6 +1066,8 @@ function isWebrtcSupported() {
                 console.log("I see webRTC !");
                 $("#status").text("Have webRTC available ");
                 $("#mute").click(_ => setMute(!mute));
+                $("#restartCall").click(_ => $("#restartConfirm").modal('show'));
+                $("#confirmRestart").click(_ => restartCall());
                 loadProps().then((props) => {
                     properties = props;
                     setRole();
