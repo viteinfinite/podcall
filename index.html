@@ -337,6 +337,19 @@ function loadProps() {
     });
     return promise;
 }
+
+    function processOffer(data) {
+        pc.setRemoteDescription(data).then(_ =>
+            pc.createAnswer(peerConnectionOfferAnswerCriteria).then(ans => {
+                ans.sdp = tweakSDP(ans.sdp);
+                pc.setLocalDescription(ans).then(_ =>
+                    sendMessage(fid, mid, "answer", ans.sdp)
+                )
+            })
+        )
+            .catch((e) => console.log("set Remote offer error", e));
+    }
+
     function messageDeal(event){
         var lines = event.data.split("\n");
         console.log("message lines = ", lines.length);
@@ -356,15 +369,20 @@ function loadProps() {
                         stopCall();
                         document.location = document.location;
                     } else {
-                        pc.setRemoteDescription(data).then(_ =>
-                            pc.createAnswer(peerConnectionOfferAnswerCriteria).then(ans => {
-                                ans.sdp = tweakSDP(ans.sdp);
-                                pc.setLocalDescription(ans).then(_ =>
-                                    sendMessage(fid, mid, "answer", ans.sdp)
-                                )
-                            })
-                        )
-                            .catch((e) => console.log("set Remote offer error", e));
+                        // Handle race condition: if pc not ready yet, wait for it
+                        if (!pc) {
+                            console.log("Received offer before pc ready, queuing...");
+                            // Wait for setupRTC to complete
+                            var waitForPC = setInterval(function() {
+                                if (pc) {
+                                    clearInterval(waitForPC);
+                                    console.log("pc now ready, processing queued offer");
+                                    processOffer(data);
+                                }
+                            }, 100);
+                        } else {
+                            processOffer(data);
+                        }
                     }
                     break;
                 case "answer":
