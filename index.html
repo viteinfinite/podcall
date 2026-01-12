@@ -91,6 +91,10 @@
             </div>
             <div class="modal-body" id="shareQR">
                 <p>Share this URL to request an interview</p>
+                <div class="form-group">
+                    <label for="shareUrl">Link URL:</label>
+                    <input type="text" class="form-control" id="shareUrl" readonly>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="shareDone" type="button" class="btn btn-secondary" data-dismiss="modal" onclick="shared();">Done</button>
@@ -959,6 +963,7 @@ function accepted() {
                 console.log("href = "+url);
                 if (url) {
                     qrcode.makeCode(url);
+                    $("#shareUrl").val(url);
                 }
                 initiator = (mid === cid);
                 var smodal;
