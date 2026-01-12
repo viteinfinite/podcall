@@ -248,6 +248,32 @@ websocketURL: "wss://pi.pe/websocket/?finger=" // where to find the redezvous se
     var softstereo = true;
     var join;
 
+    // Safari-compatible MIME type detection
+    function getSupportedMimeType() {
+        const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm;codecs=opus',
+            'audio/mp4',
+            'audio/aac'
+        ];
+
+        for (const type of types) {
+            if (MediaRecorder.isTypeSupported(type)) {
+                return type;
+            }
+        }
+        return ''; // Return empty if no supported type found
+    }
+
+    function getBlobMimeType() {
+        // Safari uses different MIME types for blobs
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        if (isSafari) {
+            return 'audio/mp4';
+        }
+        return 'audio/webm; codecs=opus';
+    }
+
     // Checkpoint system
     var sessionId;
     var checkpointInterval;
@@ -380,7 +406,9 @@ function loadProps() {
             .catch(e => console.log("offer not created due to ", e) );
     }
     function saveData(blob, suffix) {
-        var fileName = 'distributedFuture-' + new Date().toISOString() + '-' + suffix + '.webm';
+        var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        var extension = isSafari ? '.mp4' : '.webm';
+        var fileName = 'distributedFuture-' + new Date().toISOString() + '-' + suffix + extension;
 
         console.log("Save data ?");
         var a = document.createElement("a");
@@ -478,7 +506,9 @@ function loadProps() {
         a.style = "display: none";
         var url = window.URL.createObjectURL(blob);
         a.href = url;
-        a.download = 'distributedFuture-' + new Date(blob.timestamp || Date.now()).toISOString() + '-' + suffix + '.webm';
+        var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        var extension = isSafari ? '.mp4' : '.webm';
+        a.download = 'distributedFuture-' + new Date(blob.timestamp || Date.now()).toISOString() + '-' + suffix + extension;
         a.click();
         window.URL.revokeObjectURL(url);
         a.remove();
@@ -705,13 +735,15 @@ function loadProps() {
                 localNode.connect(recStreamHost);
 
                 // Create host recorder
-                recorderHost = new MediaRecorder(recStreamHost.stream);
+                var mimeType = getSupportedMimeType();
+                var options = mimeType ? { mimeType: mimeType } : {};
+                recorderHost = new MediaRecorder(recStreamHost.stream, options);
                 recorderHost.ondataavailable = function(evt) {
                     hostChunks.push(evt.data);
                     repaintDuration();
                 };
                 recorderHost.onstop = function(evt) {
-                    var blob = new Blob(hostChunks, { 'type' : 'audio/webm; codecs=opus' });
+                    var blob = new Blob(hostChunks, { 'type' : getBlobMimeType() });
                     var fileName = saveData(blob, 'host');
                     hostSaved = true;
                     console.log("Host track saved: " + fileName);
@@ -719,18 +751,18 @@ function loadProps() {
                     // Save as final checkpoint
                     var duration = Date.now() - startRecTime;
                     if (guestSaved) {
-                        saveCheckpoint(blob, new Blob(guestChunks, { 'type' : 'audio/webm; codecs=opus' }), duration);
+                        saveCheckpoint(blob, new Blob(guestChunks, { 'type' : getBlobMimeType() }), duration);
                     }
                 };
 
                 // Create guest recorder
-                recorderGuest = new MediaRecorder(recStreamGuest.stream);
+                recorderGuest = new MediaRecorder(recStreamGuest.stream, options);
                 recorderGuest.ondataavailable = function(evt) {
                     guestChunks.push(evt.data);
                     repaintDuration();
                 };
                 recorderGuest.onstop = function(evt) {
-                    var blob = new Blob(guestChunks, { 'type' : 'audio/webm; codecs=opus' });
+                    var blob = new Blob(guestChunks, { 'type' : getBlobMimeType() });
                     var fileName = saveData(blob, 'guest');
                     guestSaved = true;
                     console.log("Guest track saved: " + fileName);
@@ -738,7 +770,7 @@ function loadProps() {
                     // Save as final checkpoint
                     var duration = Date.now() - startRecTime;
                     if (hostSaved) {
-                        saveCheckpoint(new Blob(hostChunks, { 'type' : 'audio/webm; codecs=opus' }), blob, duration);
+                        saveCheckpoint(new Blob(hostChunks, { 'type' : getBlobMimeType() }), blob, duration);
                     }
                 };
 
@@ -754,8 +786,8 @@ function loadProps() {
                 checkpointInterval = setInterval(function() {
                     if (hostChunks.length > 0 || guestChunks.length > 0) {
                         var duration = Date.now() - startRecTime;
-                        var hostBlob = new Blob(hostChunks, { 'type' : 'audio/webm; codecs=opus' });
-                        var guestBlob = new Blob(guestChunks, { 'type' : 'audio/webm; codecs=opus' });
+                        var hostBlob = new Blob(hostChunks, { 'type' : getBlobMimeType() });
+                        var guestBlob = new Blob(guestChunks, { 'type' : getBlobMimeType() });
                         saveCheckpoint(hostBlob, guestBlob, duration);
                         console.log("Checkpoint saved at " + duration + "ms");
                         $("#status").text("Recording... Checkpoint saved (" + Math.floor(duration/60000) + ":" + String(Math.floor((duration%60000)/1000)).padStart(2,'0') + ")");
