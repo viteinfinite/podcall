@@ -68,8 +68,17 @@
 <div class="container">
         <div id="chosenAction" class="row">
             <button id="mute" type="button" class="btn btn-primary btn-lg"><i id="muteIcon" class="fa fa-microphone fa-2x" aria-hidden="true"></i></button>
-            <button id="stopCall" type="button" class="btn btn-primary btn-lg"><i id="stopIcon" class="fa fa-stop fa-2x" aria-hidden="true"></i></button>
+            <button id="startRecording" type="button" class="btn btn-success btn-lg" style="display: none;"><i id="startIcon" class="fa fa-circle fa-2x" aria-hidden="true"></i> Start Recording</button>
+            <button id="stopCall" type="button" class="btn btn-primary btn-lg" style="display: none;"><i id="stopIcon" class="fa fa-stop fa-2x" aria-hidden="true"></i></button>
             <button id="restartCall" type="button" class="btn btn-warning btn-lg" style="display: none;"><i id="restartIcon" class="fa fa-refresh fa-2x" aria-hidden="true"></i> Restart</button>
+        </div>
+        <div class="row mt-3">
+            <div class="col">
+                <small>Mic Level:</small>
+                <div class="progress" style="height: 20px;">
+                    <div id="micLevel" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                </div>
+            </div>
         </div>
     <div>Duration <span class="badge badge-error" id="duration"></span></div>
     <div class="alert alert-danger" id="packetLoss">
@@ -283,6 +292,9 @@ websocketURL: "wss://pi.pe/websocket/?finger=" // where to find the redezvous se
 
 
     var mute = false;
+    var recordingStarted = false;
+    var micAnalyser = null;
+    var micLevelInterval = null;
     var peerConnectionOfferAnswerCriteria =  {offerToReceiveAudio: true, offerToReceiveVideo: false };
     var AudioContext = window.AudioContext || window.webkitAudioContext;
 
@@ -561,6 +573,91 @@ function loadProps() {
         document.location = document.location;
     }
 
+    function startRecording() {
+        if (!initiator || recordingStarted) return;
+
+        recordingStarted = true;
+
+        // Start both recorders
+        if (recorderHost && recorderHost.state === 'inactive') {
+            recorderHost.start(10000);
+        }
+        if (recorderGuest && recorderGuest.state === 'inactive') {
+            recorderGuest.start(10000);
+        }
+
+        // Set up checkpoint interval
+        checkpointInterval = setInterval(function() {
+            if (hostChunks.length > 0 || guestChunks.length > 0) {
+                var duration = Date.now() - startRecTime;
+                var hostBlob = new Blob(hostChunks, { 'type' : getBlobMimeType() });
+                var guestBlob = new Blob(guestChunks, { 'type' : getBlobMimeType() });
+                saveCheckpoint(hostBlob, guestBlob, duration);
+                console.log("Checkpoint saved at " + duration + "ms");
+                $("#status").text("Recording... Checkpoint saved (" + Math.floor(duration/60000) + ":" + String(Math.floor((duration%60000)/1000)).padStart(2,'0') + ")");
+            }
+        }, CHECKPOINT_INTERVAL_MS);
+
+        // Set onbeforeunload
+        window.onbeforeunload = function() {
+            if (!hostSaved || !guestSaved) {
+                return "Recording in progress. If you leave this page, you will lose the audio files.";
+            }
+            return null;
+        };
+
+        // Update UI
+        $("#startRecording").hide();
+        $("#stopCall").show();
+        $("#status").text("Recording...");
+    }
+
+    function startMicLevelMonitoring() {
+        if (!localStream || !myac) return;
+
+        // Create analyser for mic level
+        var source = myac.createMediaStreamSource(localStream);
+        micAnalyser = myac.createAnalyser();
+        micAnalyser.fftSize = 256;
+        source.connect(micAnalyser);
+
+        var dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+
+        micLevelInterval = setInterval(function() {
+            if (mute) {
+                $("#micLevel").css('width', '0%').removeClass('bg-success bg-warning bg-danger').addClass('bg-secondary');
+                return;
+            }
+
+            micAnalyser.getByteFrequencyData(dataArray);
+
+            // Calculate average level
+            var sum = 0;
+            for (var i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            var average = sum / dataArray.length;
+
+            // Convert to percentage (0-100)
+            var level = Math.min(100, Math.round((average / 128) * 100));
+
+            // Update progress bar
+            $("#micLevel").css('width', level + '%');
+
+            // Change color based on level
+            $("#micLevel").removeClass('bg-success bg-warning bg-danger bg-secondary');
+            if (level < 20) {
+                $("#micLevel").addClass('bg-danger'); // Too quiet
+            } else if (level < 40) {
+                $("#micLevel").addClass('bg-warning'); // A bit quiet
+            } else if (level < 80) {
+                $("#micLevel").addClass('bg-success'); // Good level
+            } else {
+                $("#micLevel").addClass('bg-warning'); // Too loud (clipping risk)
+            }
+        }, 100);
+    }
+
     function showCheckpointsModal() {
         getCheckpoints().then(checkpoints => {
             var modalHtml = '<div id="checkpointsModal" class="modal" tabindex="-1" role="dialog">' +
@@ -778,29 +875,9 @@ function loadProps() {
                     console.log( "Removed track : " + event.track.kind + ": " + event.track.label);
                 };
 
-                // Start both recorders
-                recorderHost.start(10000);
-                recorderGuest.start(10000);
-
-                // Set up checkpoint interval (every 60 seconds)
-                checkpointInterval = setInterval(function() {
-                    if (hostChunks.length > 0 || guestChunks.length > 0) {
-                        var duration = Date.now() - startRecTime;
-                        var hostBlob = new Blob(hostChunks, { 'type' : getBlobMimeType() });
-                        var guestBlob = new Blob(guestChunks, { 'type' : getBlobMimeType() });
-                        saveCheckpoint(hostBlob, guestBlob, duration);
-                        console.log("Checkpoint saved at " + duration + "ms");
-                        $("#status").text("Recording... Checkpoint saved (" + Math.floor(duration/60000) + ":" + String(Math.floor((duration%60000)/1000)).padStart(2,'0') + ")");
-                    }
-                }, CHECKPOINT_INTERVAL_MS);
-
-                // Set onbeforeunload immediately when recording starts
-                window.onbeforeunload = function() {
-                    if (!hostSaved || !guestSaved) {
-                        return "Recording in progress. If you leave this page, you will lose the audio files.";
-                    }
-                    return null;
-                };
+                // Don't auto-start recording - wait for user to click Start Recording
+                $("#status").text("Connected. Press Start Recording to begin.");
+                $("#startRecording").show();
 
             } else {
                 recorder = window.setInterval(repaintDuration,10000);
@@ -814,6 +891,9 @@ function loadProps() {
             console.log('Audio sample Rate is '+ myac.sampleRate);
             $("#chosenAction").show();
             $("#statsZone").show();
+
+            // Start mic level monitoring
+            startMicLevelMonitoring();
         }
     }
 
@@ -1097,6 +1177,7 @@ function isWebrtcSupported() {
                 console.log("I see webRTC !");
                 $("#status").text("Have webRTC available ");
                 $("#mute").click(_ => setMute(!mute));
+                $("#startRecording").click(_ => startRecording());
                 $("#restartCall").click(_ => $("#restartConfirm").modal('show'));
                 $("#confirmRestart").click(_ => restartCall());
                 $("#stopCall").click(_ => $("#stopConfirm").modal('show'));
